@@ -62,8 +62,50 @@ app.get("/api/docs", async (req, res) => {
   }
 });
 
+app.get("/api/docsTitle", async (req, res) => {
+  try {
+    const docs = await Document.find({ isParent: true }).select("title _id");
+
+    res.json(docs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// app.post("/api/docs", async (req, res) => {
+//   const { title, content, parentId } = req.body;
+
+//   // Check if parentId is valid or set to null
+//   let validParentId = null;
+//   if (parentId && mongoose.Types.ObjectId.isValid(parentId)) {
+//     validParentId = new mongoose.Types.ObjectId(parentId);
+//   }
+
+//   const isParent = !validParentId;
+//   const doc = new Document({
+//     title,
+//     content,
+//     isParent,
+//     parentId: validParentId,
+//   });
+
+//   try {
+//     await doc.save();
+
+//     if (validParentId) {
+//       const parentDoc = await Document.findById(validParentId);
+//       parentDoc.children.push(doc);
+//       await parentDoc.save();
+//     }
+
+//     res.json(doc);
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+
 app.post("/api/docs", async (req, res) => {
-  const { title, content, parentId } = req.body;
+  const { id, title, content, parentId } = req.body;
 
   // Check if parentId is valid or set to null
   let validParentId = null;
@@ -72,23 +114,44 @@ app.post("/api/docs", async (req, res) => {
   }
 
   const isParent = !validParentId;
-  const doc = new Document({
-    title,
-    content,
-    isParent,
-    parentId: validParentId,
-  });
 
   try {
-    await doc.save();
+    if (id && mongoose.Types.ObjectId.isValid(id)) {
+      // Edit existing document
+      const doc = await Document.findById(id);
 
-    if (validParentId) {
-      const parentDoc = await Document.findById(validParentId);
-      parentDoc.children.push(doc);
-      await parentDoc.save();
+      if (!doc) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      doc.title = title;
+      doc.content = content;
+      doc.isParent = isParent;
+      doc.parentId = validParentId;
+
+      await doc.save();
+      res.json(doc);
+    } else {
+      // Create new document
+      const newDoc = new Document({
+        title,
+        content,
+        isParent,
+        parentId: validParentId,
+      });
+
+      await newDoc.save();
+
+      if (validParentId) {
+        const parentDoc = await Document.findById(validParentId);
+        if (parentDoc) {
+          parentDoc.children.push(newDoc._id);
+          await parentDoc.save();
+        }
+      }
+
+      res.json(newDoc);
     }
-
-    res.json(doc);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -98,6 +161,27 @@ app.get("/api/docs/:id", async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id).populate("children");
     res.json(doc);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/docswithid/:id", async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id).populate(
+      "children",
+      "title _id"
+    );
+    if (!doc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const children = doc.children.map((child) => ({
+      _id: child._id,
+      title: child.title,
+    }));
+
+    res.json(children);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
